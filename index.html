@@ -1,226 +1,278 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Answer Script Evaluator – OCR Auto Checker</title>
-<script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
-<style>
-  body { font-family: Arial, sans-serif; background:#eef2f7; margin:0; padding:0; }
-  .container { max-width: 900px; margin: auto; padding: 20px; }
-  .box { background:#fff; padding:20px; margin-bottom:20px; border-radius:10px; box-shadow:0 0 10px #bbb; }
-  h2, h3 { margin-top:0; }
-  input, button, select { width:100%; padding:10px; margin:8px 0; font-size:16px; }
-  button { cursor:pointer; border:none; background:#2563eb; color:white; border-radius:8px; }
-  button:hover { opacity:.9; }
-  .result-box { white-space: pre-wrap; background:#f9fafb; padding:10px; border-radius:8px; }
-  table { width:100%; border-collapse: collapse; margin-top:10px; }
-  th, td { border:1px solid #aaa; padding:8px; text-align:center; }
-  .small { font-size:14px; color:#555; }
-</style>
-</head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Answer Script Evaluator – OCR Auto Checker</title>
-
-<!-- PDF.js + Tesseract.js v5 -->
+<meta charset="UTF-8">
+<title>AI Auto-Grader (OCR + LLM)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- PDF.js -->
 <script src="https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
+<!-- Tesseract.js v5 -->
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 
 <style>
-  /* Your existing CSS */
+  body{font-family:Arial,sans-serif;background:#eef2f7;margin:0;padding:0;}
+  .container{max-width:960px;margin:auto;padding:20px;}
+  .box{background:#fff;padding:20px;margin-bottom:20px;border-radius:10px;box-shadow:0 0 10px #bbb;}
+  h2,h3{margin-top:0;}
+  input,button,select,textarea{width:100%;padding:10px;margin:8px 0;font-size:16px;}
+  button{cursor:pointer;border:none;background:#2563eb;color:#fff;border-radius:8px;}
+  button:hover{opacity:.9;}
+  .result-box{white-space:pre-wrap;background:#f9fafb;padding:10px;border-radius:8px;}
+  table{width:100%;border-collapse:collapse;margin-top:10px;}
+  th,td{border:1px solid #aaa;padding:8px;text-align:center;}
+  .small{font-size:14px;color:#555;}
+  .api-key{margin-top:10px;}
 </style>
 </head>
-  
-
 <body>
 <div class="container">
-<h2>📘 Answer Script Evaluator (OCR Powered)</h2>
+
+<h2>AI Auto-Grader (OCR + LLM)</h2>
 
 <div class="box">
-<h3>1. Upload Answer Key (PDF / DOC / Image)</h3>
-<input type="file" id="answerKey" />
-<div id="answerKeyPreview" class="small"></div>
+  <h3>1. Answer Key (PDF / Image)</h3>
+  <input type="file" id="answerKey" accept=".pdf,.jpg,.jpeg,.png">
+  <div id="answerKeyPreview" class="small"></div>
 </div>
 
 <div class="box">
-<h3>2. Upload Student Answer Script (Images/PDF)</h3>
-<input type="file" id="studentScript" multiple />
-<button onclick="runOCR()">Run OCR</button>
-<div id="ocrOutput" class="result-box"></div>
+  <h3>2. Student Script (PDF / Images)</h3>
+  <input type="file" id="studentScript" multiple accept=".pdf,.jpg,.jpeg,.png">
+  <button onclick="runOCR()">Run OCR</button>
+  <div id="ocrOutput" class="result-box"></div>
 </div>
 
 <div class="box">
-<h3>3. Exam & Student Details</h3>
-<input id="examNo" placeholder="Exam No">
-<input id="studentName" placeholder="Student Name">
-<input id="classSec" placeholder="Class & Section">
-<input id="subject" placeholder="Subject">
-
-<h3>Marks Setup</h3>
-<input id="totalQ" type="number" placeholder="Total Questions">
-<input id="marksPerQ" type="number" placeholder="Marks per Question">
+  <h3>3. AI Settings (optional)</h3>
+  <select id="aiProvider">
+    <option value="openai">OpenAI (gpt-4o-mini)</option>
+    <option value="gemini">Google Gemini (gemini-1.5-flash)</option>
+  </select>
+  <input id="apiKey" type="password" placeholder="Paste API key here (saved only in this tab)">
+  <button onclick="autoGrade()" id="autoGradeBtn" disabled>Auto-Grade with AI</button>
+  <div id="aiOutput" class="result-box" style="margin-top:10px;"></div>
 </div>
 
 <div class="box">
-<h3>4. Score Entry</h3>
-<textarea id="scores" rows="4" placeholder="Enter marks comma-separated. Example: 5,3,4,2"></textarea>
-<button onclick="calculateScore()">Calculate Total Score</button>
-
-<div id="scoreBox" class="result-box"></div>
-<button onclick="saveResult()">Save Result</button>
+  <h3>4. Exam & Student Details</h3>
+  <input id="examNo" placeholder="Exam No">
+  <input id="studentName" placeholder="Student Name">
+  <input id="classSec" placeholder="Class & Section">
+  <input id="subject" placeholder="Subject">
 </div>
 
 <div class="box">
-<h3>5. Saved Results</h3>
-<table id="resultTable">
-<thead><tr><th>Sl.No</th><th>Exam No</th><th>Name</th><th>Score</th></tr></thead>
-<tbody></tbody>
-</table>
-<button onclick="downloadAllPDF()">Download All Results (PDF)</button>
+  <h3>5. Marks (AI suggested – edit if needed)</h3>
+  <textarea id="scores" rows="4" placeholder="e.g. 5, 3, 4, 2"></textarea>
+  <button onclick="calculateScore()">Calculate Total</button>
+  <div id="scoreBox" class="result-box"></div>
+  <button onclick="saveResult()">Save Result</button>
+</div>
+
+<div class="box">
+  <h3>6. Saved Results</h3>
+  <table id="resultTable"><thead><tr><th>Sl</th><th>Exam No</th><th>Name</th><th>Score</th></tr></thead><tbody></tbody></table>
+  <button onclick="downloadAllPDF()">Download All (PDF)</button>
 </div>
 
 </div>
 
 <script>
-// Tesseract.js v5+ (Recommended)
-const { createWorker } = Tesseract;
-
-document.getElementById('answerKey').addEventListener('change', function(){
-    document.getElementById('answerKeyPreview').innerHTML =
-        "Uploaded: " + (this.files[0]?.name || "None");
-});
-
-async function runOCR(){
-    const files = document.getElementById('studentScript').files;
-    const outputDiv = document.getElementById('ocrOutput');
-    
-    if (files.length === 0) {
-        outputDiv.innerText = "⚠️ Please upload at least one student answer script.";
-        return;
-    }
-
-    outputDiv.innerText = "🔄 Running OCR... Please wait (this may take 10-60 seconds per page)";
-
-    const worker = await createWorker('eng', 1, {
-        logger: m => {
-            if (m.status === 'recognizing text') {
-                outputDiv.innerText = `🔄 Progress: ${(m.progress * 100).toFixed(0)}%`;
-            }
-        }
-    });
-
-    let fullText = "";
-
-    try {
-        for (let i = 0; i < files.length; i++) {
-            const file = files[i];
-            outputDiv.innerText = `🔄 Processing ${file.name}... (${i+1}/${files.length})`;
-
-            let imageUrl;
-
-            // Handle PDF: Convert first page to image
-            if (file.type === "application/pdf") {
-                const pdf = await pdfjsLib.getDocument(URL.createObjectURL(file)).promise;
-                const page = await pdf.getPage(1);
-                const viewport = page.getViewport({ scale: 2.0 });
-                const canvas = document.createElement('canvas');
-                const context = canvas.getContext('2d');
-                canvas.height = viewport.height;
-                canvas.width = viewport.width;
-                await page.render({ canvasContext: context, viewport }).promise;
-                imageUrl = canvas.toDataURL('image/png');
-            } else {
-                imageUrl = URL.createObjectURL(file);
-            }
-
-            const result = await worker.recognize(imageUrl);
-            fullText += `--- Page: ${file.name} ---\n${result.data.text}\n\n`;
-
-            if (imageUrl.startsWith('blob:')) URL.revokeObjectURL(imageUrl);
-        }
-
-        outputDiv.innerText = fullText || "No text detected.";
-    } catch (err) {
-        console.error(err);
-        outputDiv.innerText = `❌ OCR Failed: ${err.message}\n\nTip: Try with clear handwritten/printed images. PDFs must have scannable text/images.`;
-    } finally {
-        await worker.terminate();
-    }
-}
-
-// Load pdf.js for PDF → Image conversion
-const pdfjsLib = window['pdfjs-dist/build/pdf'];
-pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-
-// Rest of your functions remain same
-function calculateScore(){
-    const input = document.getElementById("scores").value;
-    if (!input.trim()) {
-        document.getElementById("scoreBox").innerText = "⚠️ Enter marks first.";
-        return;
-    }
-    const marks = input.split(",").map(n => Number(n.trim())).filter(n => !isNaN(n));
-    const total = marks.reduce((a,b) => a+b, 0);
-    document.getElementById("scoreBox").innerText = `Total Score: ${total}`;
-}
-
+/* ---------- Global vars ---------- */
+let keyText = "", studentText = "";
 let resultList = [];
 
+/* ---------- Helpers ---------- */
+function previewFile(inputId, previewId){
+  const input = document.getElementById(inputId);
+  const preview = document.getElementById(previewId);
+  input.addEventListener('change',()=> {
+    preview.innerHTML = input.files.length ? `Uploaded: ${[...input.files].map(f=>f.name).join(', ')}` : '';
+    if(inputId==='answerKey') keyText='';
+    if(inputId==='studentScript') studentText='';
+  });
+}
+previewFile('answerKey','answerKeyPreview');
+previewFile('studentScript','answerKeyPreview');
+
+/* ---------- OCR Engine ---------- */
+async function ocrFile(file, worker){
+  let imgUrl;
+  if(file.type==="application/pdf"){
+    const pdf = await pdfjsLib.getDocument(URL.createObjectURL(file)).promise;
+    const page = await pdf.getPage(1);
+    const vp = page.getViewport({scale:2});
+    const canvas = document.createElement('canvas');
+    canvas.width = vp.width; canvas.height = vp.height;
+    await page.render({canvasContext:canvas.getContext('2d'), viewport:vp}).promise;
+    imgUrl = canvas.toDataURL('image/png');
+  }else{
+    imgUrl = URL.createObjectURL(file);
+  }
+  const {data:{text}} = await worker.recognize(imgUrl);
+  if(imgUrl.startsWith('blob:')) URL.revokeObjectURL(imgUrl);
+  return text;
+}
+
+/* ---------- Run OCR ---------- */
+async function runOCR(){
+  const keyFile = document.getElementById('answerKey').files[0];
+  const stuFiles = document.getElementById('studentScript').files;
+  const out = document.getElementById('ocrOutput');
+  out.innerText = "Initializing OCR worker…";
+
+  const worker = await Tesseract.createWorker('eng',1,{
+    logger: m=>{ if(m.status==='recognizing text') out.innerText=`OCR progress: ${(m.progress*100).toFixed(0)}%`; }
+  });
+
+  try{
+    // ---- Answer Key ----
+    if(keyFile){
+      out.innerText = "OCR → Answer Key…";
+      keyText = await ocrFile(keyFile, worker);
+    }
+
+    // ---- Student Script ----
+    if(stuFiles.length){
+      out.innerText = "OCR → Student script(s)…";
+      studentText = "";
+      for(let f of stuFiles){
+        const txt = await ocrFile(f, worker);
+        studentText += `\n--- ${f.name} ---\n${txt}\n`;
+      }
+    }
+
+    out.innerText = `Answer Key extracted: ${keyText?keyText.length:'0'} chars\nStudent text: ${studentText.length} chars`;
+    document.getElementById('autoGradeBtn').disabled = !(keyText && studentText);
+  }catch(e){
+    out.innerText = `OCR error: ${e.message}`;
+    console.error(e);
+  }finally{
+    await worker.terminate();
+  }
+}
+
+/* ---------- AI Auto-Grading ---------- */
+async function autoGrade(){
+  const provider = document.getElementById('aiProvider').value;
+  const apiKey = document.getElementById('apiKey').value.trim();
+  const out = document.getElementById('aiOutput');
+  if(!apiKey){ alert("Enter your API key first!"); return; }
+
+  out.innerText = "Sending to AI…";
+
+  // ---- Detect questions in key ----
+  const qRegex = /(?:^|\n)\s*(?:Q\d+|Question\s*\d+|\d+[\.\)])[\s\n]+([^]*?)(?=(?:^|\n)\s*(?:Q\d+|Question\s*\d+|\d+[\.\)])|\Z)/gi;
+  const keyMatches = [...keyText.matchAll(qRegex)].map(m=>m[1].trim());
+  if(!keyMatches.length){ out.innerText="Could not detect numbered questions in answer key."; return; }
+
+  // ---- Split student answers by same pattern ----
+  const stuMatches = [...studentText.matchAll(qRegex)].map(m=>m[1].trim());
+  const questions = keyMatches.map((key,i)=>({
+    num: i+1,
+    key: key,
+    answer: stuMatches[i]||""
+  }));
+
+  // ---- Build prompt ----
+  const prompt = `You are an expert examiner. Grade the following ${questions.length} questions.
+Give **only** a JSON array of numbers (marks for each question). Max marks per question = 5.
+Do NOT add explanations.
+
+Questions & Answers:
+${questions.map(q=>`Q${q.num}. Key: ${q.key}\nStudent: ${q.answer}`).join('\n\n')}
+
+Return: [3,5,2,...]`;
+
+  // ---- Call API ----
+  let scores;
+  try{
+    if(provider==="openai"){
+      const resp = await fetch('https://api.openai.com/v1/chat/completions',{
+        method:'POST',
+        headers:{'Authorization':`Bearer ${apiKey}`,'Content-Type':'application/json'},
+        body:JSON.stringify({
+          model:'gpt-4o-mini',
+          messages:[{role:'user',content:prompt}],
+          temperature:0
+        })
+      });
+      const data = await resp.json();
+      const txt = data.choices?.[0]?.message?.content?.trim() || "";
+      scores = JSON.parse(txt);
+    }else{ // gemini
+      const resp = await fetch(`https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${apiKey}`,{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({contents:[{role:'user',parts:[{text:prompt}]}]})
+      });
+      const data = await resp.json();
+      const txt = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
+      scores = JSON.parse(txt);
+    }
+  }catch(e){
+    out.innerText = `AI error: ${e.message}`;
+    return;
+  }
+
+  if(!Array.isArray(scores) || scores.some(s=>typeof s!=='number')){
+    out.innerText = "AI returned invalid format.";
+    return;
+  }
+
+  // ---- Show editable scores ----
+  document.getElementById('scores').value = scores.join(', ');
+  out.innerHTML = `<strong>AI suggested marks:</strong> ${scores.join(', ')}<br><em>Edit above if needed, then click “Calculate Total”.</em>`;
+  calculateScore();
+}
+
+/* ---------- Manual score calc ---------- */
+function calculateScore(){
+  const txt = document.getElementById('scores').value;
+  if(!txt.trim()){ document.getElementById('scoreBox').innerText='Enter marks first.'; return; }
+  const marks = txt.split(',').map(n=>Number(n.trim())).filter(n=>!isNaN(n));
+  const total = marks.reduce((a,b)=>a+b,0);
+  document.getElementById('scoreBox').innerText = `Total Score: ${total}`;
+}
+
+/* ---------- Save & Table ---------- */
 function saveResult(){
-    const examNo = document.getElementById("examNo").value.trim();
-    const name = document.getElementById("studentName").value.trim();
-    const scoreText = document.getElementById("scoreBox").innerText;
+  const examNo = document.getElementById('examNo').value.trim();
+  const name   = document.getElementById('studentName').value.trim();
+  const scoreBox = document.getElementById('scoreBox').innerText;
+  if(!examNo||!name||!scoreBox.includes('Total Score')){ alert('Fill details & calculate score first!'); return; }
 
-    if (!examNo || !name || !scoreText.includes("Total Score")) {
-        alert("Fill Exam No, Name, and Calculate Score first!");
-        return;
-    }
+  const score = scoreBox.replace('Total Score: ','');
+  resultList.push({examNo,name,score});
+  refreshTable();
 
-    const score = scoreText.replace("Total Score: ", "").trim();
-    resultList.push({examNo, name, score});
-    refreshTable();
-
-    // Clear form
-    document.getElementById("examNo").value = "";
-    document.getElementById("studentName").value = "";
-    document.getElementById("scores").value = "";
-    document.getElementById("scoreBox").innerText = "";
+  // reset form
+  ['examNo','studentName','classSec','subject','scores'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('scoreBox').innerText='';
 }
 
+/* ---------- Table refresh ---------- */
 function refreshTable(){
-    const tbody = document.querySelector("#resultTable tbody");
-    tbody.innerHTML = "";
-    resultList.forEach((r, i) => {
-        tbody.innerHTML += `<tr>
-            <td>${i+1}</td>
-            <td>${r.examNo}</td>
-            <td>${r.name}</td>
-            <td>${r.score}</td>
-        </tr>`;
-    });
+  const tbody = document.querySelector('#resultTable tbody');
+  tbody.innerHTML='';
+  resultList.forEach((r,i)=>{
+    tbody.innerHTML+=`<tr><td>${i+1}</td><td>${r.examNo}</td><td>${r.name}</td><td>${r.score}</td></tr>`;
+  });
 }
 
+/* ---------- PDF export ---------- */
 function downloadAllPDF(){
-    if (resultList.length === 0) {
-        alert("No results to download!");
-        return;
-    }
-    const w = window.open();
-    let html = `<h2>Exam Results</h2>
-    <table border="1" style="width:100%; border-collapse:collapse; font-family:Arial;">
-    <tr><th>Sl.No</th><th>Exam No</th><th>Name</th><th>Score</th></tr>`;
-
-    resultList.forEach((r,i) => {
-        html += `<tr><td>${i+1}</td><td>${r.examNo}</td><td>${r.name}</td><td>${r.score}</td></tr>`;
-    });
-    html += `</table><p><small>Generated on: ${new Date().toLocaleString('en-IN')}</small></p>`;
-
-    w.document.write(html);
-    w.document.close();
-    setTimeout(() => w.print(), 500);
+  if(!resultList.length){ alert('No results yet!'); return; }
+  const w = window.open('','_blank');
+  let html = `<h2>Exam Results – ${new Date().toLocaleString('en-IN')}</h2>
+<table border="1" style="width:100%;border-collapse:collapse;font-family:Arial;">
+<tr><th>Sl</th><th>Exam No</th><th>Name</th><th>Score</th></tr>`;
+  resultList.forEach((r,i)=>html+=`<tr><td>${i+1}</td><td>${r.examNo}</td><td>${r.name}</td><td>${r.score}</td></tr>`);
+  html+=`</table>`;
+  w.document.write(html);
+  w.document.close();
+  setTimeout(()=>w.print(),600);
 }
 </script>
-
 </body>
 </html>
