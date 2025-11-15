@@ -19,6 +19,19 @@
   .small { font-size:14px; color:#555; }
 </style>
 </head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Answer Script Evaluator – OCR Auto Checker</title>
+
+<!-- PDF.js + Tesseract.js v5 -->
+<script src="https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+
+<style>
+  /* Your existing CSS */
+</style>
+</head>
+  
 
 <body>
 <div class="container">
@@ -70,47 +83,115 @@
 </div>
 
 <script>
+// Tesseract.js v5+ (Recommended)
+const { createWorker } = Tesseract;
+
 document.getElementById('answerKey').addEventListener('change', function(){
     document.getElementById('answerKeyPreview').innerHTML =
-        "Uploaded: " + this.files[0].name;
+        "Uploaded: " + (this.files[0]?.name || "None");
 });
 
 async function runOCR(){
     const files = document.getElementById('studentScript').files;
-    let text = "";
-
-    for(let f of files){
-        const result = await Tesseract.recognize(f, 'eng', {
-            logger: m => console.log(m)
-        });
-        text += result.data.text + "\n\n";
+    const outputDiv = document.getElementById('ocrOutput');
+    
+    if (files.length === 0) {
+        outputDiv.innerText = "⚠️ Please upload at least one student answer script.";
+        return;
     }
 
-    document.getElementById('ocrOutput').innerText = text;
+    outputDiv.innerText = "🔄 Running OCR... Please wait (this may take 10-60 seconds per page)";
+
+    const worker = await createWorker('eng', 1, {
+        logger: m => {
+            if (m.status === 'recognizing text') {
+                outputDiv.innerText = `🔄 Progress: ${(m.progress * 100).toFixed(0)}%`;
+            }
+        }
+    });
+
+    let fullText = "";
+
+    try {
+        for (let i = 0; i < files.length; i++) {
+            const file = files[i];
+            outputDiv.innerText = `🔄 Processing ${file.name}... (${i+1}/${files.length})`;
+
+            let imageUrl;
+
+            // Handle PDF: Convert first page to image
+            if (file.type === "application/pdf") {
+                const pdf = await pdfjsLib.getDocument(URL.createObjectURL(file)).promise;
+                const page = await pdf.getPage(1);
+                const viewport = page.getViewport({ scale: 2.0 });
+                const canvas = document.createElement('canvas');
+                const context = canvas.getContext('2d');
+                canvas.height = viewport.height;
+                canvas.width = viewport.width;
+                await page.render({ canvasContext: context, viewport }).promise;
+                imageUrl = canvas.toDataURL('image/png');
+            } else {
+                imageUrl = URL.createObjectURL(file);
+            }
+
+            const result = await worker.recognize(imageUrl);
+            fullText += `--- Page: ${file.name} ---\n${result.data.text}\n\n`;
+
+            if (imageUrl.startsWith('blob:')) URL.revokeObjectURL(imageUrl);
+        }
+
+        outputDiv.innerText = fullText || "No text detected.";
+    } catch (err) {
+        console.error(err);
+        outputDiv.innerText = `❌ OCR Failed: ${err.message}\n\nTip: Try with clear handwritten/printed images. PDFs must have scannable text/images.`;
+    } finally {
+        await worker.terminate();
+    }
 }
 
+// Load pdf.js for PDF → Image conversion
+const pdfjsLib = window['pdfjs-dist/build/pdf'];
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+// Rest of your functions remain same
 function calculateScore(){
-    const marks = document.getElementById("scores").value.split(",").map(n=>Number(n.trim()));
-    const total = marks.reduce((a,b)=>a+b,0);
-    document.getElementById("scoreBox").innerText = "Total Score: " + total;
+    const input = document.getElementById("scores").value;
+    if (!input.trim()) {
+        document.getElementById("scoreBox").innerText = "⚠️ Enter marks first.";
+        return;
+    }
+    const marks = input.split(",").map(n => Number(n.trim())).filter(n => !isNaN(n));
+    const total = marks.reduce((a,b) => a+b, 0);
+    document.getElementById("scoreBox").innerText = `Total Score: ${total}`;
 }
 
 let resultList = [];
 
 function saveResult(){
-    const examNo = document.getElementById("examNo").value;
-    const name = document.getElementById("studentName").value;
-    const score = document.getElementById("scoreBox").innerText.replace("Total Score: ","");
+    const examNo = document.getElementById("examNo").value.trim();
+    const name = document.getElementById("studentName").value.trim();
+    const scoreText = document.getElementById("scoreBox").innerText;
 
-    resultList.push({examNo,name,score});
+    if (!examNo || !name || !scoreText.includes("Total Score")) {
+        alert("Fill Exam No, Name, and Calculate Score first!");
+        return;
+    }
+
+    const score = scoreText.replace("Total Score: ", "").trim();
+    resultList.push({examNo, name, score});
     refreshTable();
+
+    // Clear form
+    document.getElementById("examNo").value = "";
+    document.getElementById("studentName").value = "";
+    document.getElementById("scores").value = "";
+    document.getElementById("scoreBox").innerText = "";
 }
 
 function refreshTable(){
     const tbody = document.querySelector("#resultTable tbody");
     tbody.innerHTML = "";
-
-    resultList.forEach((r, i)=>{
+    resultList.forEach((r, i) => {
         tbody.innerHTML += `<tr>
             <td>${i+1}</td>
             <td>${r.examNo}</td>
@@ -121,19 +202,23 @@ function refreshTable(){
 }
 
 function downloadAllPDF(){
+    if (resultList.length === 0) {
+        alert("No results to download!");
+        return;
+    }
     const w = window.open();
-    let html = "<h2>Results</h2><table border='1' style='width:100%;border-collapse:collapse;'>";
-    html += "<tr><th>Sl.No</th><th>Exam No</th><th>Name</th><th>Score</th></tr>";
+    let html = `<h2>Exam Results</h2>
+    <table border="1" style="width:100%; border-collapse:collapse; font-family:Arial;">
+    <tr><th>Sl.No</th><th>Exam No</th><th>Name</th><th>Score</th></tr>`;
 
-    resultList.forEach((r,i)=>{
+    resultList.forEach((r,i) => {
         html += `<tr><td>${i+1}</td><td>${r.examNo}</td><td>${r.name}</td><td>${r.score}</td></tr>`;
     });
-
-    html += "</table>";
+    html += `</table><p><small>Generated on: ${new Date().toLocaleString('en-IN')}</small></p>`;
 
     w.document.write(html);
-    w.print();
-    w.close();
+    w.document.close();
+    setTimeout(() => w.print(), 500);
 }
 </script>
 
